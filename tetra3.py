@@ -14,7 +14,7 @@ paramters. It can be loaded by calling Tetra3.load_database() without any argume
 
 Note:
     If you wish to build you own database (e.g. for different field of view) you must download the Yale Bright Star
-    Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place in the tetra3 directory. 
+    Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place in the tetra3 directory.
     (direct download link: <http://tdc-www.harvard.edu/catalogs/BSC5>).
 
 It is critical to set up the centroid extraction parameters (see get_centroids_from_image()) to reliably return star
@@ -173,6 +173,20 @@ class Tetra3():
         if load_database is not None:
             self._logger.debug('Trying to load database')
             self.load_database(load_database)
+
+    @property
+    def debug_folder(self):
+        """pathlib.Path: Get or set the path for debug logging. Will create folder if not existing."""
+        return self._debug_folder
+    @debug_folder.setter
+    def debug_folder(self, path):
+        # Do not do logging in here! This will be called before the logger is set up
+        assert isinstance(path, Path), 'Must be pathlib.Path object'
+        if path.is_file():
+            path = path.parent
+        if not path.is_dir():
+            path.mkdir(parents=True)
+        self._debug_folder = path
 
     @property
     def has_database(self):

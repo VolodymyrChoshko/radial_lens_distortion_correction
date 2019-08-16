@@ -1,3 +1,9 @@
-# Doc ignore
+# Documents
 /docs/_*
 /docs/*.log
+
+# Cache
+*__pycache__*
+
+# Debug logs
+/debug/*
