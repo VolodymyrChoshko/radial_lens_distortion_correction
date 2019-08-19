@@ -1,5 +1,5 @@
-Installing
-==========
+Installation
+============
 
 Getting Python
 --------------
@@ -16,7 +16,7 @@ Prompt.
 Optional: Environment for tetra3
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 To run tetra3 in a python environment that is separated from your other projects (therefore avoiding
-requirements clashes and installation issues) you may elect to create an environment. To do so::
+requirements clashes and other issues) you may elect to create an environment. To do so::
 
     conda create --name tetra3_env python=3.7 pip
     conda activate tetra3_env
@@ -64,7 +64,7 @@ a user on GitHub and setting you username and email::
 
 You will now also be able to push proposed changes to the software. There are many good resources
 for learning about Git, `the documentation <https://git-scm.com/doc>`_ which includes the reference,
-a free book on Git, and basic videos is a good place to start.
+a free book on Git, and introductory videos is a good place to start.
 
 Installing tetra3
 -----------------
