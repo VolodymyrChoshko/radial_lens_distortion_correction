@@ -7,3 +7,8 @@
 
 # Debug logs
 /debug/*
+
+# Builds
+/build/*
+/dist/*
+*egg-info*
