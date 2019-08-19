@@ -8,5 +8,5 @@ setuptools.setup(
     description='A fast Python lost-in-space plate solver for star trackers.',
     url='https://github.com/esa/tetra3',
     packages=setuptools.find_packages(),
-    install_requires=['numpy >= 1.17.0', 'scipy >= 1.3.1', 'Pillow>=6.1.0'],
+    install_requires=['numpy >= 1.17.0', 'scipy >= 1.3.1', 'Pillow >= 6.1.0'],
 )

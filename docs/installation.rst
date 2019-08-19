@@ -10,7 +10,18 @@ method is by `downloading Miniconda for Python 3+
 
     conda update conda
     
-to ensure you are up to date.
+to ensure you are up to date. You will now be able to run Python by typing python in the Anaconda
+Prompt.
+
+Optional: Environment for tetra3
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+To run tetra3 in a python environment that is separated from your other projects (therefore avoiding
+requirements clashes and installation issues) you may elect to create an environment. To do so::
+
+    conda create --name tetra3_env python=3.7 pip
+    conda activate tetra3_env
+    
+and then proceed the same. (To go to your base environment type ``conda deactivate``.)
 
 Getting tetra3
 --------------
@@ -23,8 +34,8 @@ The quick way
 Go to `the GitHub repository <https://github.com/esa/tetra3>`_, click `Clone or Download` and
 `Download ZIP` and extract the tetra3 directory to where you want to use it.
 
-The proper way
-^^^^^^^^^^^^^^
+The good way
+^^^^^^^^^^^^
 To be able to easily download and contribute updates to tetra3 you should install Git. Follow the
 instructions for your platform `over here <https://git-scm.com/downloads>`_.
 
@@ -52,12 +63,12 @@ a user on GitHub and setting you username and email::
     git config --global user.email "email@domain.com"
 
 You will now also be able to push proposed changes to the software. There are many good resources
-for learning about Git, `the official documentation <https://git-scm.com/doc>`_ which includes the 
-reference, a book on Git, and basic videos is a good place to start.
+for learning about Git, `the documentation <https://git-scm.com/doc>`_ which includes the reference,
+a free book on Git, and basic videos is a good place to start.
 
 Installing tetra3
 -----------------
-To install the requirements open a terminal/CMD window in the tetra3 directory and run::
+To install the requirements open Anaconda Prompt in the tetra3 directory and run::
 
     python setup.py install
     
