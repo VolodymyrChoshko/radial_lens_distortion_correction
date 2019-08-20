@@ -6,12 +6,26 @@ Getting Python
 tetra3 is written for Python 3.7 (and therefore runs on almost any platform) and should work with
 most modern Python 3 installations. There are many ways to get Python on your system. The preferred
 method is by `downloading Miniconda for Python 3+ 
-<https://docs.conda.io/en/latest/miniconda.html>`_. Afterwards, open `Anaconda Prompt` and type::
+<https://docs.conda.io/en/latest/miniconda.html>`_. If you are on Windows you will be given the
+option to `add conda to PATH` during installation. If you do not select this option, the
+instructions (including running python and tetra3) which refer to the terminal/CMD window will need
+to be carried out in the `Anaconda Prompt` instead.
+
+Now, open a terminal/CMD window and test that you have conda and python by typing::
+
+    conda
+    python
+    exit()
+    
+(On Windows you may be sent to the Windows Store to download Python on the second line. Do not do
+this, instead go to `Manage app execution aliases` in the Windows settings and disable the python
+and python3 aliases to use the version installed with miniconda.)
+
+Now ensure you are up to date::
 
     conda update conda
     
-to ensure you are up to date. You will now be able to run Python by typing python in the Anaconda
-Prompt.
+You can now run any python script by typing ``python script_name.py``.
 
 Optional: Environment for tetra3
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -68,7 +82,7 @@ a free book on Git, and introductory videos is a good place to start.
 
 Installing tetra3
 -----------------
-To install the requirements open Anaconda Prompt in the tetra3 directory and run::
+To install the requirements open a terminal/CMD window in the tetra3 directory and run::
 
     python setup.py install
     
