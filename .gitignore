@@ -12,3 +12,6 @@
 /build/*
 /dist/*
 *egg-info*
+
+# Settings
+/setup.cfg

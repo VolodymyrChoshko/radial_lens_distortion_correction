@@ -9,7 +9,7 @@ centroids and statistics.
 
 Included in the package:
 
-    - :class:`tetra3.Tetra3`: Solve images and create databases.
+    - :class:`tetra3.Tetra3`: Class to solve images and load/create databases.
     - :meth:`tetra3.get_centroids_from_image`: Extract spot centroids from an image.
     - :meth:`tetra3.crop_and_downsample_image`: Crop and/or downsample an image.
 
@@ -732,12 +732,112 @@ class Tetra3():
         return np.where(np.dot(np.asarray(vector), self.star_table[:, 2:5].T) > np.cos(radius))[0]
 
 
-def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, crop=None,
+def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsample=None,
                              filtsize=7, bg_sub_mode='local_median', sigma_mode='local_median_abs',
-                             max_area=None, min_area=None, max_sum=None, min_sum=None,
-                             max_returned=None, max_axis_ratio=None, binary_open=True,
-                             centroid_window=None, return_moments=False, return_images=False):
-    """Extract centroids from an image."""
+                             binary_open=True, centroid_window=None, max_area=None, min_area=3,
+                             max_sum=None, min_sum=None, max_axis_ratio=None, max_returned=None,
+                             return_moments=False, return_images=False):
+    """Extract spot centroids from an image and calculate statistics.
+
+    This is a versatile function for finding spots (e.g. stars or satellites) in an image and
+    calculating/filtering their positions (centroids) and statistics (e.g. sum, area, shape).
+
+    The coordinates start at the top/left edge of the pixel, i.e. x=y=0.5 is the centre of the
+    top-left pixel. To convert the results to integer pixel indices use the floor operator.
+
+    To aid in finding optimal settings pass `return_images=True` to get back a dictionary with
+    partial extraction results and tweak the parameters accordingly.
+
+    In general, the best extraction is attained with `bg_sub_mode='local_median'` and
+    `sigma_mode='local_median_abs'` with a reasonable (e.g. 7 to 15) size filter. However, this may
+    be slow (especially for larger filter sizes). A recommendable and much faster alternative is
+    `bg_sub_mode='local_mean'` and `sigma_mode='global_root_square'` with a large (e.g. 15 to 25)
+    sized filter. You may also elect to do background subtraction and finding the threshold by
+    your own methods, then pass `bg_sub_mode=None` and your threshold as `image_th` to bypass these
+    extraction steps.
+
+    The algorithm proceeds as follows:
+        1. Convert image to 2D numpy.ndarray with type float32.
+        2. Call :meth:`tetra3.crop_and_downsample_image` with the image and supplied arguments
+           `crop` and `downsample`.
+        3. Subtract the background if `bg_sub_mode` is not None. Four methods are available:
+
+           - 'local_median' (the default): Create the background image using a median filter of
+             size `filtsize` and subtract pixelwise.
+           - 'local_mean': Create the background image using a mean filter of size `filtsize` and
+             subtract pixelwise.
+           - 'global_median': Subtract the median value of all pixels from each pixel.
+           - 'global_mean': Subtract the mean value of all pixels from each pixel.
+
+        4. Calculate the image threshold if image_th is None. If image_th is defined this value
+           will be used to threshold the image. The threshold is determined by calculating the
+           noise standard deviation with the metod selected as `sigma_mode` and then scaling it by
+           `sigma` (default 3). The available methods are:
+
+           - 'local_median_abs' (the default): For each pixel, calculate the standard deviation as
+             the median of the absolute values in a region of size `filtsize` and scale by 1.48.
+           - 'local_root_square': For each pixel, calculate the standard deviation as the square
+             root of the mean of the square values in a region of size `filtsize`.
+           - 'global_median_abs': Use the median of the absolute value of all pixels scaled by 1.48
+             as the standard deviation.
+           - 'global_root_square': Use the square root of the mean of the square of all pixels as
+             the standard deviation.
+
+        5. Create a binary mask using the image threshold. If `binary_open=True` (the default)
+           apply a binary opening operation with a 3x3 cross as structuring element to clean up the
+           mask.
+        6. Label all regions (spots) in the binary mask.
+        7. Calculate statistics on each region and reject it if it fails any of the max or min
+           values passed. Calculated statistics are: area, sum, centroid (first moments) in x and
+           y, second moments in xx, yy, and xy, major over minor axis ratio.
+        8. Sort the regions, largest sum first, and keep at most `max_returned` if not None.
+        9. If `centroid_window` is not None, recalculate the statistics using a square region of
+           the supplied width (instead of the region from the binary mask).
+        10. Undo the effects of cropping and downsampling by adding offsets/scaling the centroid
+            positions to correspond to pixels in the original image.
+
+    Args:
+        image (numpy.ndarray): Image to find centroids in.
+        sigma (float, optional): The number of noise standard deviations to threshold at.
+            Default 3.
+        image_th (float, optional): The value to threshold the image at. If supplied `sigma` and
+            `simga_mode` will have no effect.
+        crop (tuple, optional): Cropping to apply, see :meth:`tetra3.crop_and_downsample_image`.
+        downsample (int, optinal): Downsampling to apply, see
+            :meth:`tetra3.crop_and_downsample_image`.
+        filtsize (int, optional): Size of filter to use in local operations. Must be odd.
+            Default 7.
+        bg_sub_mode (str, optional): Background subtraction mode. Must be one of 'local_median'
+            (the default), 'local_mean', 'global_median', 'global_mean'.
+        sigma_mode (str, optinal): Mode used to calculate noise standard deviation. Must be one of
+            'local_median_abs' (the default), 'local_root_square', 'global_median_abs', or
+            'global_root_square'.
+        binary_open (bool, optional): If True (the default), apply binary opening with 3x3 cross
+           to thresholded binary mask.
+        centroid_window (int, optional): If supplied, recalculate statistics using a square window
+            of the supplied size.
+        max_area (int, optional): Reject spots larger than this.
+        min_area (int, optional): Reject spots smaller than this. Default 3.
+        max_sum (float, optional): Reject spots with a sum larger than this.
+        min_sum (float, optional): Reject spots with a sum smaller than this.
+        max_axis_ratio (float, optional): Reject spots with a ratio of major over minor axis larger
+            than this.
+        max_returned (int, optional): Return at most this many spots.
+        return_moments (bool, optional): If set to True, return the calculated statistics (e.g.
+            higher order moments, sum, area) together with the spot positions.
+        return_images (bool, optional): If set to True, return a dictionary with partial results
+            from the steps in the algorithm.
+
+    Returns:
+        numpy.ndarray or tuple: If `return_moments=False` and `return_images=False` (the defaults)
+            an array of shape (N,2) is returned with centroid positions (y down, x right) of the
+            found spots in order of brightness. If `return_moments=True` a tuple of numpy arrays
+            is returned with: (N,2) centroid positions, N sum, N area, (N,3) xx yy and xy second
+            moments, N major over minor axis ratio. If `return_images=True` a tuple is returned
+            with the results as defined previously and a dictionary with images and data of partial
+            results.
+    """
+
     # bg_sub_mode and sigma_mode:
     # local_median, global_median, global_mean
 
@@ -767,7 +867,7 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
     #    3: size Nx3 with xx,yy,xy variances (second moment)
     #    4: size N with ratio of major/minor axis
 
-    # 0. Ensure image is float np array and 2D:
+    # 1. Ensure image is float np array and 2D:
     image = np.asarray(image, dtype=np.float32)
     if image.ndim == 3:
         assert image.shape[2] in (1, 3), 'Colour image must have 1 or 3 colour channels'
@@ -779,13 +879,15 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
             image = image.squeeze(axis=2)
     else:
         assert image.ndim == 2, 'Image must be 2D or 3D array'
-
-    # 1,2 Crop and downsample
+    if return_images:
+        images_dict = {'converted_input': image.copy()}
+    # 2 Crop and downsample
     (image, offs) = crop_and_downsample_image(image, crop=crop, downsample=downsample,
                                               return_offsets=True, sum_when_downsample=True)
     (height, width) = image.shape
     (offs_h, offs_w) = offs
-
+    if return_images:
+        images_dict['cropped_and_downsampled'] = image.copy()
     # 3. Subtract background:
     if bg_sub_mode is not None:
         if bg_sub_mode.lower() == 'local_median':
@@ -807,7 +909,8 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
         else:
             raise AssertionError('bg_sub_mode must be string: local_median, local_mean,'
                                  + ' global_median, or global_mean')
-
+    if return_images:
+        images_dict['removed_background'] = image.copy()
     # 4. Find noise standard deviation to threshold unless a threshold is already defined!
     if image_th is None:
         assert sigma_mode is not None and isinstance(sigma_mode, str), \
@@ -822,8 +925,8 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
         elif sigma_mode.lower() == 'local_root_square':
             assert filtsize is not None, 'Must define filter size for local median sigma mode'
             assert filtsize % 2 == 1, 'Filter size must be odd'
-            img_std = np.sqrt(scipy.ndimage.filters.median_filter(image**2, size=filtsize,
-                                                                  output=image.dtype))
+            img_std = np.sqrt(scipy.ndimage.filters.uniform_filter(image**2, size=filtsize,
+                                                                   output=image.dtype))
         elif sigma_mode.lower() == 'global_median_abs':
             img_std = np.median(np.abs(image)) * 1.48
         elif sigma_mode.lower() == 'global_root_square':
@@ -832,22 +935,33 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
             raise AssertionError('sigma_mode must be string: local_median_abs, local_root_square,'
                                  + ' global_median_abs, or global_root_square')
         image_th = img_std * sigma
-
-    # 5. Threshold to find binary mask and labels
+    if return_images:
+        images_dict['image_threshold'] = image_th
+    # 5. Threshold to find binary mask
     bin_mask = image > image_th
     if binary_open:
         bin_mask = scipy.ndimage.binary_opening(bin_mask)
+    if return_images:
+        images_dict['binary_mask'] = bin_mask
+    # 6. Label each region in the binary mask
     (labels, num_labels) = scipy.ndimage.label(bin_mask)
+    index = np.arange(1, num_labels + 1)
+    if return_images:
+        images_dict['labelled_regions'] = labels
     if num_labels < 1:
         # Found nothing in binary image, return empty.
-        if return_moments:
+        if return_moments and return_images:
+            return ((np.empty((0, 2)), np.empty((0, 1)), np.empty((0, 1)), np.empty((0, 3)),
+                     np.empty((0, 1))), images_dict)
+        elif return_moments:
             return (np.empty((0, 2)), np.empty((0, 1)), np.empty((0, 1)), np.empty((0, 3)),
                     np.empty((0, 1)))
+        elif return_images:
+            return (np.empty((0, 2)), images_dict)
         else:
             return np.empty((0, 2))
-    index = np.arange(1, num_labels + 1)
 
-    # 6. Get statistics and threshold
+    # 7. Get statistics and threshold
     def calc_stats(a, p):
         """Calculates statistics for each labelled region:
         - Sum (zeroth moment)
@@ -885,12 +999,14 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
                                               pass_positions=True)
     valid = np.all(~np.isnan(tmp), axis=1)
     extracted = tmp[valid, :]
-    # 7. Sort
+    if return_images:
+        images_dict['label_statistics'] = bin_mask.copy()
+    # 8. Sort
     order = (-extracted[:, 0]).argsort()
     if max_returned:
         order = order[:max_returned]
     extracted = extracted[order, :]
-    # 8. If desired, redo centroiding with traditional window
+    # 9. If desired, redo centroiding with traditional window
     if centroid_window is not None:
         if centroid_window > min(height, width):
             centroid_window = min(height, width)
@@ -914,22 +1030,47 @@ def get_centroids_from_image(image, sigma=3, image_th=None, downsample=None, cro
             xc = np.sum(img_cent * xx) / img_sum
             yc = np.sum(img_cent * yy) / img_sum
             extracted[i, 1:3] = np.array([yc, xc]) + [offs_y, offs_x]
-    # 9. Revert effects of crop and downsample
+    # 10. Revert effects of crop and downsample
     if downsample:
         extracted[:, 1:3] = extracted[:, 1:3] * downsample  # Scale centroid
     if crop:
         extracted[:, 1:3] = extracted[:, 1:3] + np.array([offs_h, offs_w])  # Offset centroid
     # Return results
-    if return_moments:
+    if return_moments and return_images:
+        return ((extracted[:, 1:3], extracted[:, 0], extracted[:, 6], extracted[:, 3:6],
+                 extracted[:, 7]), images_dict)
+    elif return_moments:
         return (extracted[:, 1:3], extracted[:, 0], extracted[:, 6], extracted[:, 3:6],
                 extracted[:, 7])
+    elif return_images:
+        return (extracted[:, 1:3], images_dict)
     else:
         return extracted[:, 1:3]
 
 
 def crop_and_downsample_image(image, crop=None, downsample=None, sum_when_downsample=True,
                               return_offsets=False):
-    """Crop and/or downsample an image."""
+    """Crop and/or downsample an image. Cropping is applied before downsampling.
+
+    Args:
+        image (numpy.ndarray): The image to crop and downsample. Must be 2D.
+        crop (int or tuple, optional): Desired cropping of the image. May be defined in three ways:
+
+            - Scalar: Image is cropped to given fraction (e.g. crop=2 gives 1/2 size image out).
+            - 2-tuple: Image is cropped to centered region with size crop = (height, width).
+            - 4-tuple: Image is cropped to region with size crop[0:2] = (height, width), offset
+              from the centre by crop[2:4] = (offset_down, offset_right).
+
+        downsample (int, optional): Downsampling factor, e.g. downsample=2 will combine 2x2 pixel
+            regions into one. The image width and height must be divisible by this factor.
+        sum_when_downsample (bool, optional): If True (the default) downsampled pixels are
+            calculated by summing the original pixel values. If False the mean is used.
+        return_offsets (bool, optional): If True, return the applied cropping offset.
+    Returns:
+        numpy.ndarray or tuple: If `return_offsets=False` (the default) a 2D array with the cropped
+        and dowsampled image is returned. If `return_offsets=True` is passed a tuple containing
+        the image and a tuple with the cropping offsets (top, left) is returned.
+    """
     # Input must be 2-d numpy array
     # Crop can be either a scalar, 2-tuple, or 4-tuple:
     # Scalar: Image is cropped to given fraction (eg input crop=2 gives 1/2 size image out)
