@@ -13,20 +13,19 @@ Included in the package:
     - :meth:`tetra3.get_centroids_from_image`: Extract spot centroids from an image.
     - :meth:`tetra3.crop_and_downsample_image`: Crop and/or downsample an image.
 
-A default database (named 'default_database') is included in the repo, it is built with max_fov=12
-and the default paramters. It can be loaded by calling Tetra3.load_database() without any
-arguments.
+A default database (named `default_database`) is included in the repo, it is built for a maximum
+field of view of 12 degrees and and the default settings.
 
 Note:
     If you wish to build you own database (e.g. for different field of view) you must download the
     Yale Bright Star Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place
     in the tetra3 directory. (Direct download link: <http://tdc-www.harvard.edu/catalogs/BSC5>.)
 
-It is critical to set up the centroid extraction parameters (see get_centroids_from_image()) to
-reliably return star centroids from a given image. After this is done, pass the same keyword
-arguments to Tetra3.solve_from_image() to use them when solving your images.
+It is critical to set up the centroid extraction parameters (see :meth:`get_centroids_from_image`
+to reliably return star centroids from a given image. After this is done, pass the same keyword
+arguments to :meth:`Tetra3.solve_from_image` to use them when solving your images.
 
-This is Free and Open-Source Software based on *Tetra* rewritten by Gustav Pettersson at ESA.
+This is Free and Open-Source Software based on `Tetra` rewritten by Gustav Pettersson at ESA.
 
 The original software is due to:
 J. Brown, K. Stubis, and K. Cahoy, "TETRA: Star Identification with Hash Tables",
@@ -86,10 +85,6 @@ import scipy.optimize
 import scipy.stats
 
 _MAGIC_RAND = 2654435761
-
-
-def utc_timestamp():
-    return datetime.utcnow().replace(microsecond=0).isoformat(' ')
 
 
 def _insert_at_index(item, index, table):
@@ -152,6 +147,57 @@ def _generate_patterns_from_centroids(star_centroids, pattern_size):
 
 
 class Tetra3():
+    """Solve star patterns and manage databases.
+
+    To find the direction in the sky an image is showing this class calculates a "fingerprint" of
+    the stars seen in the image and looks for matching fingerprints in a pattern catalogue loaded
+    into memory. Subsequently, all stars that should be visible in the image (based on the
+    fingerprint's location) are looked for and the match is confirmed or rejected based on the
+    probability that the found number of matches happens by chance.
+
+    Each pattern is made up of four stars, and the fingerprint is created by calculating the
+    distances between every pair of stars in the pattern and normalising by the longest to create
+    a set of five numbers between zero and one. This information, and the desired tolerance, is
+    used to find the indices in the database where the match may reside by a hashing function.
+
+    A database needs to be generated with patterns which are of appropriate scale for the field
+    of view (FOV) of your camera. Therefore, generate a database using :meth:`generate_database`
+    with a `max_fov` which is the FOV of your camera (or slightly larger). A database with
+    `max_fov=12` (degrees) is included as `default_database.npz`.
+
+    Star locations (centroids) are found using :meth:`tetra3.get_centroids_from_image`, use one of
+    your images to find settings which work well for your images. Then pass those settings as
+    keyword arguments to :meth:`solve_from_image`.
+
+    Example 1: Load database and solve image
+        ::
+
+            import tetra3
+            # Create instance
+            t3 = tetra3.Tetra3()
+            # Load a database
+            t3.load_database('default_database')
+            # Create dictionary with desired extraction settings
+            extract_dict = {'min_sum': 250, 'max_axis_ratio': 1.5}
+            # Solve for image, optionally passing known FOV estimate and error range
+            result = t3.solve_from_image(image, fov_estimate=11, fov_max_error=.5, **extract_dict)
+
+    Example 2: Generate and save database
+        ::
+
+            import tetra3
+            # Create instance
+            t3 = tetra3.Tetra3()
+            # Generate and save database
+            t3.generate_database(max_fov=20, save_as='my_database_name')
+
+    Args:
+        load_database (str or pathlib.Path, optional): Database to load. Will call
+            :meth:`load_database` with the provided argument after creating instance.
+        debug_folder (pathlib.Path, optional): The folder for debug logging. If None (the default)
+            the folder tetra3/debug will be used/created.
+
+    """
     def __init__(self, load_database=None, debug_folder=None):
         # Logger setup
         self._debug_folder = None
@@ -239,11 +285,11 @@ class Tetra3():
             - 'pattern_max_error' Maximum difference allowed in pattern for a match.
             - 'max_fov': Maximum angle between stars in the same pattern (Field of View; degrees).
             - 'pattern_stars_per_fov': Number of stars used for patterns in each region of size
-                                       'max_fov'.
+              'max_fov'.
             - 'catalog_stars_per_fov': Number of stars in catalog in each region of size 'max_fov'.
             - 'star_min_magnitude': Dimmest apparent magnitude of stars in database.
             - 'star_min_separation': Smallest separation allowed between stars (to remove doubles;
-                                     degrees).
+              degrees).
         """
         return self._db_props
 
@@ -316,15 +362,21 @@ class Tetra3():
         np.savez_compressed(path, star_table=self.star_table,
                             pattern_catalog=self.pattern_catalog, props_packed=props_packed)
 
-    def generate_pattern_catalog(self, max_fov, save_as=None, pattern_stars_per_fov=10,
-                                 catalog_stars_per_fov=20, star_min_magnitude=6.5,
-                                 star_min_separation=.05, pattern_max_error=.005):
-        """Create a database. Typically takes 5 to 30 minutes.
+    def generate_database(self, max_fov, save_as=None, pattern_stars_per_fov=10,
+                          catalog_stars_per_fov=20, star_min_magnitude=6.5,
+                          star_min_separation=.05, pattern_max_error=.005):
+        """Create a database and optionally save to file. Typically takes 5 to 30 minutes.
+
+        Note:
+            If you wish to build you own database (e.g. for different field of view) you must
+            download the Yale Bright Star Catalog 'BCS5' from
+            <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place in the tetra3 directory.
+            (Direct download link: <http://tdc-www.harvard.edu/catalogs/BSC5>.)
 
         Args:
             max_fov (float): Maximum angle (in degrees) between stars in the same pattern.
             save_as (str or pathlib.Path, optional): Save catalog here when finished. Calls
-                save_database(save_as).
+                :meth:`save_database`.
             pattern_stars_per_fov (int, optional): Number of stars used for patterns in each region
                 of size 'max_fov'.
             catalog_stars_per_fov (int, optional): Number of stars in catalog in each region of
@@ -333,6 +385,16 @@ class Tetra3():
             star_min_separation (float, optional): Smallest separation (in degrees) allowed between
                 stars (to remove doubles).
             pattern_max_error (float, optional): Maximum difference allowed in pattern for a match.
+
+        Example:
+            ::
+
+                # Create instance
+                t3 = tetra3.Tetra3()
+                # Generate and save database
+                t3.generate_database(max_fov=20, save_as='my_database_name')
+
+
         """
         self._logger.debug('Got generate pattern catalogue with input: '
                            + str((max_fov, save_as, pattern_stars_per_fov,
@@ -516,10 +578,55 @@ class Tetra3():
             self._logger.debug('Saving generated database as: ' + str(save_as))
             self.save_database(save_as)
 
-    def solve_from_image(self, img, fov_estimate=None, fov_max_error=None, match_radius=.01,
-                         match_threshold=1e-9, pattern_checking_stars=6, **kwargs):
+    def solve_from_image(self, image, fov_estimate=None, fov_max_error=None,
+                         pattern_checking_stars=6, match_radius=.01, match_threshold=1e-9,
+                         **kwargs):
+        """Solve for the sky location of an image.
+
+        Star locations (centroids) are found using :meth:`tetra3.get_centroids_from_image` and
+        keyword arguments are passed along to this method. Every combination of the
+        `pattern_checking_stars` (default 6) brightest stars found is checked against the database
+        before giving up.
+
+        Example:
+            ::
+
+                # Create dictionary with desired extraction settings
+                extract_dict = {'min_sum': 250, 'max_axis_ratio': 1.5}
+                # Solve for image
+                result = t3.solve_from_image(image, **extract_dict)
+
+        Args:
+            image (numpy.ndarray): The image to solve for, must be convertible to numpy array.
+            fov_estimate (float, optional): Estimated field of view of the image in degrees.
+            fov_max_error (float, optional): Maximum difference in field of view from the estimate
+                allowed for a match in degrees.
+            pattern_checking_stars (int, optional): Number of stars used to create possible
+                patterns to look up in database.
+            match_radius (float, optional): Maximum distance to a star to be considered a match
+                as a fraction of the image field of view.
+            match_threshold (float, optional): Maximum allowed mismatch probability to consider
+                a tested pattern a valid match.
+            **kwargs (optional): Other keyword arguments passed to
+                :meth:`tetra3.get_centroids_from_image`.
+
+        Returns:
+            dict: A dictionary with the following keys is returned:
+                - 'RA': Right ascension of centre of image in degrees.
+                - 'Dec': Declination of centre of image in degrees.
+                - 'Roll': Rotation of image relative to north celestial pole.
+                - 'FOV': Calculated field of view of the provided image.
+                - 'RMSE': RMS residual of matched stars in arcseconds.
+                - 'Matches': Number of stars in the image matched to the database.
+                - 'Prob': Probability that the solution is a mismatch.
+                - 'T_solve': Time spent searching for a match in milliseconds.
+                - 'T_extract': Time spent exctracting star centroids in milliseconds.
+
+                If unsuccsessful in finding a match,  None is returned for all keys of the
+                dictionary except 'T_solve' and 'T_exctract'.
+        """
         assert self.has_database, 'No database loaded'
-        img = np.asarray(img)
+        image = np.asarray(image)
         if fov_estimate is None:
             fov_estimate = np.deg2rad(self._db_props['max_fov'])
         else:
@@ -531,7 +638,7 @@ class Tetra3():
         pattern_checking_stars = int(pattern_checking_stars)
 
         # extract height (y) and width (x) of image
-        height, width = img.shape[0:2]
+        height, width = image.shape[0:2]
         # Extract relevant database properties
         num_stars = self._db_props['catalog_stars_per_fov']
         p_size = self._db_props['pattern_size']
@@ -539,7 +646,7 @@ class Tetra3():
         p_max_err = self._db_props['pattern_max_error']
         # Run star extraction, passing kwargs along
         t0_extract = precision_timestamp()
-        star_centroids = get_centroids_from_image(img, max_returned=num_stars, **kwargs)
+        star_centroids = get_centroids_from_image(image, max_returned=num_stars, **kwargs)
         t_extract = (precision_timestamp() - t0_extract)*1000
 
         def compute_vectors(star_centroids, fov):

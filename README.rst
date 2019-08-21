@@ -13,11 +13,11 @@ General instructions are available at the
 Source Software released by the European Space Agency under the Apache License 2.0. See NOTICE.txt
 in the repository for full licensing details.
 
-Performance will vary, but in general solutions will take less than 10 milliseconds (excluding time
-needed to extract the stars from images) with better than 10 arcseconds (50 microradians) accuracy.
+Performance will vary, but in general solutions will take 10 milliseconds (excluding time to extract
+star positions from images) with 10 arcsecond (50 microradian) accuracy.
 
 A camera with a field of view of at least 10 degrees and 512 by 512 pixels is a good starting point.
-It is also important that the distortion of the lens is low to preserve the true shape of the star
+It is important that the distortion of the lens is low to preserve the true shape of the star
 patterns. Your camera should be able to acquire stars down to magnitude 6.5 for best results (for
 a narrow field of view camera this becomes very important as there are few bright stars).
 
