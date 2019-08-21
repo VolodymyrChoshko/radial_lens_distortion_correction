@@ -15,3 +15,10 @@
 
 # Settings
 /setup.cfg
+
+# Star catalogue
+/BSC5*
+
+# Databases except the default
+*.npz
+!/default_database.npz
