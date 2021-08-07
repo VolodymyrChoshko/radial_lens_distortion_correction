@@ -84,7 +84,7 @@ Installing tetra3
 -----------------
 To install the requirements open a terminal/CMD window in the tetra3 directory and run::
 
-    python setup.py install
+    pip install -r requirements.txt
     
 to install all requirements. Test that everything works by running an example::
 
