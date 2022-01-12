@@ -72,6 +72,9 @@ Original Tetra license notice:
 
 # Standard imports:
 from pathlib import Path
+import os.path
+import sys
+import csv
 import logging
 import itertools
 from time import perf_counter as precision_timestamp
@@ -336,7 +339,7 @@ class Tetra3():
         else:
             self._logger.debug('Not a string, use as path directly')
             path = Path(path).with_suffix('.npz')
-
+            
         self._logger.info('Saving database to: ' + str(path))
         # Pack properties as numpy structured array
         props_packed = np.array((self._db_props['pattern_mode'],
@@ -362,21 +365,24 @@ class Tetra3():
         np.savez_compressed(path, star_table=self.star_table,
                             pattern_catalog=self.pattern_catalog, props_packed=props_packed)
 
-    def generate_database(self, max_fov, save_as=None, pattern_stars_per_fov=10,
+    def generate_database(self, max_fov, save_as=None, star_catalog='bsc5', pattern_stars_per_fov=10,
                           catalog_stars_per_fov=20, star_min_magnitude=6.5,
                           star_min_separation=.05, pattern_max_error=.005):
         """Create a database and optionally save to file. Typically takes 5 to 30 minutes.
 
         Note:
             If you wish to build you own database (e.g. for different field of view) you must
-            download the Yale Bright Star Catalog 'BCS5' from
-            <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place in the tetra3 directory.
-            (Direct download link: <http://tdc-www.harvard.edu/catalogs/BSC5>.)
+            download one of the following star catalogs:
+                the Yale Bright Star Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html>,
+                the Hipparcos-2 Star Catalog from <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/hip_main.dat>,
+                or the Tycho-2 Star Catalog from <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/tyc_main.dat>,
+            and place in the tetra3 directory.
 
         Args:
             max_fov (float): Maximum angle (in degrees) between stars in the same pattern.
             save_as (str or pathlib.Path, optional): Save catalog here when finished. Calls
                 :meth:`save_database`.
+            star_catalog (string, optional): Abbreviated name of star catalog, one of "bsc5", "hip2", or "tyc2".
             pattern_stars_per_fov (int, optional): Number of stars used for patterns in each region
                 of size 'max_fov'.
             catalog_stars_per_fov (int, optional): Number of stars in catalog in each region of
@@ -397,9 +403,10 @@ class Tetra3():
 
         """
         self._logger.debug('Got generate pattern catalogue with input: '
-                           + str((max_fov, save_as, pattern_stars_per_fov,
+                           + str((max_fov, save_as, star_catalog, pattern_stars_per_fov,
                                   catalog_stars_per_fov, star_min_magnitude,
                                   star_min_separation, pattern_max_error)))
+        assert star_catalog in ('bsc5', 'hip2', 'tyc2'), 'Star catalogue name must be one of: "bsc5", "hip2", "tyc2"'
         max_fov = np.deg2rad(float(max_fov))
         pattern_stars_per_fov = int(pattern_stars_per_fov)
         catalog_stars_per_fov = int(catalog_stars_per_fov)
@@ -407,49 +414,81 @@ class Tetra3():
         star_min_separation = float(star_min_separation)
         pattern_size = 4
         pattern_bins = 25
+        current_year = datetime.utcnow().year
+        
+        # Get star catalog file info:
+        catalog_file_names = {
+          'bsc5': 'BSC5',
+          'hip2': 'hip_main.dat',
+          'tyc2': 'tyc_main.dat'       
+        }
+        catalog_file_name = catalog_file_names[star_catalog]
+        catalog_file_full_pathname = Path(__file__).parent / catalog_file_names[star_catalog]
+        assert os.path.exists(catalog_file_full_pathname), 'Error, file "%s" does not exist' % catalog_file_full_pathname        
+        file_size = os.path.getsize(catalog_file_full_pathname)
+        self._logger.debug("Star catalogue file size is %i Bytes" % file_size)
+        
+        # Calculate number of star catalog entries:
+        if star_catalog == 'bsc5':
+            header_length = 28
+            entry_length = 4+8+8+2+2+4+4  # sum of bytes per field according to field data types listed in bsc5_data_type below
+        elif star_catalog == 'hip2' or star_catalog == 'tyc2':
+            header_length = 0
+            entry_length = 451  # 450 chars + linefeed
+        num_entries = int( (file_size - header_length) / entry_length )
 
-        self._logger.debug('Loading BCS5 catalogue')
-        num_entries = 9110
-        bsc5_data_type = [('ID', np.float32), ('RA1950', np.float64),
-                          ('Dec1950', np.float64), ('type', np.int16),
-                          ('mag', np.int16), ('RA_pm', np.float32), ('Dec_PM', np.float32)]
-        path = Path(__file__).parent / 'BSC5'
-        with open(path, 'rb') as bsc5_file:
-            # skip first 28 header bytes
-            bsc5_file.seek(28)
-            # read BSC5 catalog into array
-            bsc5 = np.fromfile(bsc5_file, dtype=bsc5_data_type, count=num_entries)
-            # year to propagate positions to:
-            year = datetime.utcnow().year
-            # retrieve star positions, magnitudes and ids from BSC5 catalog
-            star_table = np.zeros((num_entries, 6), dtype=np.float32)
-            for (i, entry) in enumerate(bsc5):  # star_num in range(num_entries):
-                # only use stars brighter (i.e. lower magnitude)
-                # than the minimum allowable magnitude
-                mag = entry[4] / 100.0
-                if mag <= star_min_magnitude:
-                    # retrieve RA in 1950
-                    ra = entry[1]
-                    # correct RA to modern day
-                    ra += entry[5] * (year - 1950)
-                    # retrieve DEC in 1950
-                    dec = entry[2]
-                    # correct DEC to modern day
-                    dec += entry[6] * (year - 1950)
-                    # skip blank star entries
-                    if ra == 0.0 and dec == 0.0:
+        # Preallocate star table:
+        star_table = np.zeros((num_entries, 6), dtype=np.float32)        
+        
+        # Read magnitude, RA, and Dec from star catalog:
+        if star_catalog == 'bsc5':
+            bsc5_data_type = [('ID', np.float32), ('RA1950', np.float64),
+                              ('Dec1950', np.float64), ('type', np.int16),
+                              ('mag', np.int16), ('RA_pm', np.float32), ('Dec_PM', np.float32)]            
+            with open(catalog_file_full_pathname, 'rb') as star_catalog_file:
+                star_catalog_file.seek(header_length)  # skip header
+                reader = np.fromfile(star_catalog_file, dtype=bsc5_data_type, count=num_entries)
+                for (i, entry) in enumerate(reader):  # star_num in range(num_entries):
+                    mag = entry[4]/100
+                    if mag <= star_min_magnitude:
+                        ra  = entry[1] + entry[5] * (current_year - 1950)
+                        dec = entry[2] + entry[6] * (current_year - 1950)
+                        star_table[i,:] = ([ra, dec, 0, 0, 0, mag])
+        elif star_catalog in ('hip2', 'tyc2'):
+            incomplete_entries = 0
+            with open(catalog_file_full_pathname, 'r') as star_catalog_file:
+                reader = csv.reader(star_catalog_file, delimiter='|')
+                for (i, entry) in enumerate(reader):  # star_num in range(num_entries):
+                    # skip this entry if any of the required fields is empty:
+                    if entry[5].isspace() or entry[8].isspace() or entry[9].isspace() or \
+                                            entry[12].isspace() or entry[13].isspace():
+                        incomplete_entries +=1
                         continue
-                    # convert RA, DEC to (x,y,z)
-                    vector = np.array([np.cos(ra)*np.cos(dec),
-                                       np.sin(ra)*np.cos(dec),
-                                       np.sin(dec)])
-                    # add to table of stars
-                    star_table[i, :] = ([ra, dec, *vector, mag])
-        kept = np.sum(star_table[:, 2:5]**2, axis=1) > 0  # Nonzero unit vector means we filled it
+                    mag = float(entry[5])
+                    if mag is not None and mag <= star_min_magnitude:
+                        pmRA = np.float(entry[12])/1000/60/60  # convert milliarcseconds per year to degrees per year
+                        ra  = np.deg2rad( np.float(entry[8]) + pmRA * (current_year - 1991.25) )
+                        pmDec = np.float(entry[13])/1000/60/60  # convert milliarcseconds per year to degrees per year
+                        dec = np.deg2rad( np.float(entry[9]) + pmDec * (current_year - 1991.25) )
+                        star_table[i,:] = ([ra, dec, 0, 0, 0, mag])
+                if incomplete_entries:
+                    self._logger.info('Skipped %i incomplete entries' % incomplete_entries)
+
+        # Remove entries in which RA and Dec are both zero
+        # (i.e. keep entries in which either RA or Dec is non-zero)
+        kept = np.logical_or(star_table[:, 0]!=0, star_table[:, 1]!=0)
         star_table = star_table[kept, :]
         star_table = star_table[np.argsort(star_table[:, -1]), :]  # Sort by brightness
-        self._logger.info('Loaded ' + str(star_table.shape[0]) + ' stars from catalogue.')
+        num_entries = star_table.shape[0]
+        self._logger.info('Loaded ' + str(num_entries) + ' stars from catalogue.')                        
 
+        # Calculate star direction vectors:
+        for i in range(0, num_entries):
+            vector = np.array([np.cos(star_table[i,0])*np.cos(star_table[i,1]),
+                               np.sin(star_table[i,0])*np.cos(star_table[i,1]),
+                               np.sin(star_table[i,1])])
+            star_table[i,2:5] = vector
+                
         # Filter for maximum number of stars in FOV and doubles
         keep_for_patterns = [False] * star_table.shape[0]
         keep_for_verifying = [False] * star_table.shape[0]
@@ -561,6 +600,9 @@ class Tetra3():
                     pattern_catalog[index] = pattern
                     break
         self._logger.info('Finished generating database.')
+        
+        self._logger.info('Size of uncompressed star table: %i Bytes' % sys.getsizeof(star_table))
+        self._logger.info('Size of uncompressed pattern catalog: %i Bytes' % sys.getsizeof(pattern_catalog))
 
         self._star_table = star_table
         self._pattern_catalog = pattern_catalog
@@ -573,10 +615,13 @@ class Tetra3():
         self._db_props['catalog_stars_per_fov'] = catalog_stars_per_fov
         self._db_props['star_min_magnitude'] = star_min_magnitude
         self._db_props['star_min_separation'] = star_min_separation
+        self._logger.debug(self._db_props)
 
         if save_as is not None:
             self._logger.debug('Saving generated database as: ' + str(save_as))
             self.save_database(save_as)
+        else:
+            self._logger.info('Skipping database file generation.')
 
     def solve_from_image(self, image, fov_estimate=None, fov_max_error=None,
                          pattern_checking_stars=6, match_radius=.01, match_threshold=1e-9,
