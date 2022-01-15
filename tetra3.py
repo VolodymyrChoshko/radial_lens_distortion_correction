@@ -16,14 +16,24 @@ Included in the package:
 A default database (named `default_database`) is included in the repo, it is built for a maximum
 field of view of 12 degrees and and the default settings.
 
-Note:
-    If you wish to build you own database (e.g. for different field of view) you must download the
-    Yale Bright Star Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html> and place
-    in the tetra3 directory. (Direct download link: <http://tdc-www.harvard.edu/catalogs/BSC5>.)
-
 It is critical to set up the centroid extraction parameters (see :meth:`get_centroids_from_image`
 to reliably return star centroids from a given image. After this is done, pass the same keyword
 arguments to :meth:`Tetra3.solve_from_image` to use them when solving your images.
+
+Note:
+    If you wish to build you own database (typically for a different field-of-view) you must
+    download a star catalogue. tetra3 supports three options:
+    
+    * The 285KB Yale Bright Star Catalog 'BSC5' containing 9,110 stars. This is complete to
+      to about magnitude seven and is sufficient for >10 deg field-of-view setups.
+    * The 51MB Hipparcos Catalogue 'hip_main' containing 118,218 stars. This contains about
+      three stars per square degree and is sufficient down to about >3 deg field-of-view.
+    * The 355MB Tycho Catalogue 'tyc_main' (also from the Hipparcos satellite mission)
+      containing 1,058,332 stars. This is complete to magnitude 10 and is sufficient for all tetra3 databases.
+    The 'BSC5' data is avaiable from <http://tdc-www.harvard.edu/catalogs/bsc5.html> (use
+    byte format file) and 'hip_main' and 'tyc_main' are available from
+    <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/> (save the appropriate .dat file). The
+    downloaded catalogue must be placed in the tetra3 directory.
 
 This is Free and Open-Source Software based on `Tetra` rewritten by Gustav Pettersson at ESA.
 
@@ -384,6 +394,7 @@ class Tetra3():
         Note:
             If you wish to build you own database (typically for a different field-of-view) you must
             download a star catalogue. tetra3 supports three options:
+            
             * The 285KB Yale Bright Star Catalog 'BSC5' containing 9,110 stars. This is complete to
               to about magnitude seven and is sufficient for >10 deg field-of-view setups.
             * The 51MB Hipparcos Catalogue 'hip_main' containing 118,218 stars. This contains about
