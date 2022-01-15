@@ -327,6 +327,10 @@ class Tetra3():
                     self._db_props[key] = props_packed['catalog_stars_per_fov'][()]
                     self._logger.debug('Unpacked catalog_stars_per_fov to: ' \
                         + str(self._db_props[key]))
+                elif key == 'star_max_magnitude':
+                    self._db_props[key] = props_packed['star_min_magnitude'][()]
+                    self._logger.debug('Unpacked star_min_magnitude to: ' \
+                        + str(self._db_props[key]))
                 else:
                     raise
 
