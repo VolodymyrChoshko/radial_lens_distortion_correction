@@ -840,7 +840,7 @@ class Tetra3():
 
 
 def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsample=None,
-                             filtsize=7, bg_sub_mode='local_median', sigma_mode='local_median_abs',
+                             filtsize=15, bg_sub_mode='local_mean', sigma_mode='global_root_square',
                              binary_open=True, centroid_window=None, max_area=None, min_area=3,
                              max_sum=None, min_sum=None, max_axis_ratio=None, max_returned=None,
                              return_moments=False, return_images=False):
@@ -853,15 +853,17 @@ def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsampl
     top-left pixel. To convert the results to integer pixel indices use the floor operator.
 
     To aid in finding optimal settings pass `return_images=True` to get back a dictionary with
-    partial extraction results and tweak the parameters accordingly.
+    partial extraction results and tweak the parameters accordingly. The dictionary entry
+    'binary_mask' is the result of the process which identifies stars and is most useful for this.
 
     In general, the best extraction is attained with `bg_sub_mode='local_median'` and
     `sigma_mode='local_median_abs'` with a reasonable (e.g. 7 to 15) size filter. However, this may
-    be slow (especially for larger filter sizes). A recommendable and much faster alternative is
-    `bg_sub_mode='local_mean'` and `sigma_mode='global_root_square'` with a large (e.g. 15 to 25)
-    sized filter. You may also elect to do background subtraction and finding the threshold by
-    your own methods, then pass `bg_sub_mode=None` and your threshold as `image_th` to bypass these
-    extraction steps.
+    be slow (especially for larger filter sizes) and requires that the camera readout bit-depth is
+    sufficient to accurately capture the camera noise. A recommendable and much faster alternative
+    is `bg_sub_mode='local_mean'` and `sigma_mode='global_root_square'` with a large (e.g. 15 to 25)
+    sized filter, which is the default. You may elect to do background subtraction and image
+    thresholding by your own methods, then pass `bg_sub_mode=None` and your threshold as `image_th`
+    to bypass these extraction steps.
 
     The algorithm proceeds as follows:
         1. Convert image to 2D numpy.ndarray with type float32.
@@ -869,9 +871,9 @@ def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsampl
            `crop` and `downsample`.
         3. Subtract the background if `bg_sub_mode` is not None. Four methods are available:
 
-           - 'local_median' (the default): Create the background image using a median filter of
+           - 'local_median': Create the background image using a median filter of
              size `filtsize` and subtract pixelwise.
-           - 'local_mean': Create the background image using a mean filter of size `filtsize` and
+           - 'local_mean' (the default): Create the background image using a mean filter of size `filtsize` and
              subtract pixelwise.
            - 'global_median': Subtract the median value of all pixels from each pixel.
            - 'global_mean': Subtract the mean value of all pixels from each pixel.
@@ -881,14 +883,14 @@ def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsampl
            noise standard deviation with the metod selected as `sigma_mode` and then scaling it by
            `sigma` (default 3). The available methods are:
 
-           - 'local_median_abs' (the default): For each pixel, calculate the standard deviation as
+           - 'local_median_abs': For each pixel, calculate the standard deviation as
              the median of the absolute values in a region of size `filtsize` and scale by 1.48.
            - 'local_root_square': For each pixel, calculate the standard deviation as the square
              root of the mean of the square values in a region of size `filtsize`.
            - 'global_median_abs': Use the median of the absolute value of all pixels scaled by 1.48
              as the standard deviation.
-           - 'global_root_square': Use the square root of the mean of the square of all pixels as
-             the standard deviation.
+           - 'global_root_square' (the default): Use the square root of the mean of the square of
+             all pixels as the standard deviation.
 
         5. Create a binary mask using the image threshold. If `binary_open=True` (the default)
            apply a binary opening operation with a 3x3 cross as structuring element to clean up the
