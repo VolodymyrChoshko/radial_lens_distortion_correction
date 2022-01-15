@@ -72,8 +72,6 @@ Original Tetra license notice:
 
 # Standard imports:
 from pathlib import Path
-import os.path
-import sys
 import csv
 import logging
 import itertools
@@ -88,6 +86,7 @@ import scipy.optimize
 import scipy.stats
 
 _MAGIC_RAND = 2654435761
+_supported_databases = ('bsc5', 'hip_main', 'tyc_main')
 
 
 def _insert_at_index(item, index, table):
@@ -231,8 +230,8 @@ class Tetra3():
         self._verification_catalog = None
         self._db_props = {'pattern_mode': None, 'pattern_size': None, 'pattern_bins': None,
                           'pattern_max_error': None, 'max_fov': None,
-                          'pattern_stars_per_fov': None, 'catalog_stars_per_fov': None,
-                          'star_min_magnitude': None, 'star_min_separation': None}
+                          'pattern_stars_per_fov': None, 'verification_stars_per_fov': None,
+                          'star_max_magnitude': None, 'star_min_separation': None}
         if load_database is not None:
             self._logger.debug('Trying to load database')
             self.load_database(load_database)
@@ -289,8 +288,8 @@ class Tetra3():
             - 'max_fov': Maximum angle between stars in the same pattern (Field of View; degrees).
             - 'pattern_stars_per_fov': Number of stars used for patterns in each region of size
               'max_fov'.
-            - 'catalog_stars_per_fov': Number of stars in catalog in each region of size 'max_fov'.
-            - 'star_min_magnitude': Dimmest apparent magnitude of stars in database.
+            - 'verification_stars_per_fov': Number of stars in catalog in each region of size 'max_fov'.
+            - 'star_max_magnitude': Dimmest apparent magnitude of stars in database.
             - 'star_min_separation': Smallest separation allowed between stars (to remove doubles;
               degrees).
         """
@@ -320,8 +319,16 @@ class Tetra3():
             props_packed = data['props_packed']
         self._logger.debug('Unpacking properties')
         for key in self._db_props.keys():
-            self._db_props[key] = props_packed[key][()]
-            self._logger.debug('Unpacked ' + str(key)+' to: ' + str(self._db_props[key]))
+            try:
+                self._db_props[key] = props_packed[key][()]
+                self._logger.debug('Unpacked ' + str(key)+' to: ' + str(self._db_props[key]))
+            except ValueError:
+                if key == 'verification_stars_per_fov':
+                    self._db_props[key] = props_packed['catalog_stars_per_fov'][()]
+                    self._logger.debug('Unpacked catalog_stars_per_fov to: ' \
+                        + str(self._db_props[key]))
+                else:
+                    raise
 
     def save_database(self, path):
         """Save database to file.
@@ -348,8 +355,8 @@ class Tetra3():
                                  self._db_props['pattern_max_error'],
                                  self._db_props['max_fov'],
                                  self._db_props['pattern_stars_per_fov'],
-                                 self._db_props['catalog_stars_per_fov'],
-                                 self._db_props['star_min_magnitude'],
+                                 self._db_props['verification_stars_per_fov'],
+                                 self._db_props['star_max_magnitude'],
                                  self._db_props['star_min_separation']),
                                 dtype=[('pattern_mode', 'U64'),
                                        ('pattern_size', np.uint16),
@@ -357,8 +364,8 @@ class Tetra3():
                                        ('pattern_max_error', np.float32),
                                        ('max_fov', np.float32),
                                        ('pattern_stars_per_fov', np.uint16),
-                                       ('catalog_stars_per_fov', np.uint16),
-                                       ('star_min_magnitude', np.float32),
+                                       ('verification_stars_per_fov', np.uint16),
+                                       ('star_max_magnitude', np.float32),
                                        ('star_min_separation', np.float32)])
         self._logger.debug('Packed properties into: ' + str(props_packed))
         self._logger.debug('Saving as compressed numpy archive')
@@ -366,28 +373,35 @@ class Tetra3():
                             pattern_catalog=self.pattern_catalog, props_packed=props_packed)
 
     def generate_database(self, max_fov, save_as=None, star_catalog='bsc5', pattern_stars_per_fov=10,
-                          catalog_stars_per_fov=20, star_min_magnitude=6.5,
+                          verification_stars_per_fov=20, star_max_magnitude=7,
                           star_min_separation=.05, pattern_max_error=.005):
         """Create a database and optionally save to file. Typically takes 5 to 30 minutes.
 
         Note:
-            If you wish to build you own database (e.g. for different field of view) you must
-            download one of the following star catalogs:
-                the Yale Bright Star Catalog 'BCS5' from <http://tdc-www.harvard.edu/catalogs/bsc5.html>,
-                the Hipparcos-2 Star Catalog from <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/hip_main.dat>,
-                or the Tycho-2 Star Catalog from <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/tyc_main.dat>,
-            and place in the tetra3 directory.
+            If you wish to build you own database (typically for a different field-of-view) you must
+            download a star catalogue. tetra3 supports three options:
+            * The 285KB Yale Bright Star Catalog 'BSC5' containing 9,110 stars. This is complete to
+              to about magnitude seven and is sufficient for >10 deg field-of-view setups.
+            * The 51MB Hipparcos Catalogue 'hip_main' containing 118,218 stars. This contains about
+              three stars per square degree and is sufficient down to about >3 deg field-of-view.
+            * The 355MB Tycho Catalogue 'tyc_main' (also from the Hipparcos satellite mission)
+              containing 1,058,332 stars. This is complete to magnitude 10 and is sufficient for all tetra3 databases.
+            The 'BSC5' data is avaiable from <http://tdc-www.harvard.edu/catalogs/bsc5.html> (use
+            byte format file) and 'hip_main' and 'tyc_main' are available from
+            <https://cdsarc.u-strasbg.fr/ftp/cats/I/239/> (save the appropriate .dat file). The
+            downloaded catalogue must be placed in the tetra3 directory.
 
         Args:
             max_fov (float): Maximum angle (in degrees) between stars in the same pattern.
             save_as (str or pathlib.Path, optional): Save catalog here when finished. Calls
                 :meth:`save_database`.
-            star_catalog (string, optional): Abbreviated name of star catalog, one of "bsc5", "hip2", or "tyc2".
-            pattern_stars_per_fov (int, optional): Number of stars used for patterns in each region
-                of size 'max_fov'.
-            catalog_stars_per_fov (int, optional): Number of stars in catalog in each region of
-                size 'max_fov'.
-            star_min_magnitude (float, optional): Dimmest apparent magnitude of stars in database.
+            star_catalog (string, optional): Abbreviated name of star catalog, one of 'bsc5',
+                'hip_main', or 'tyc_main'.
+            pattern_stars_per_fov (int, optional): Number of stars used for pattern matching in each
+                region of size 'max_fov'.
+            verification_stars_per_fov (int, optional): Number of stars used for verification of the
+                solution in each region of size 'max_fov'.
+            star_max_magnitude (float, optional): Dimmest apparent magnitude of stars in database.
             star_min_separation (float, optional): Smallest separation (in degrees) allowed between
                 stars (to remove doubles).
             pattern_max_error (float, optional): Maximum difference allowed in pattern for a match.
@@ -404,38 +418,37 @@ class Tetra3():
         """
         self._logger.debug('Got generate pattern catalogue with input: '
                            + str((max_fov, save_as, star_catalog, pattern_stars_per_fov,
-                                  catalog_stars_per_fov, star_min_magnitude,
+                                  verification_stars_per_fov, star_max_magnitude,
                                   star_min_separation, pattern_max_error)))
-        assert star_catalog in ('bsc5', 'hip2', 'tyc2'), 'Star catalogue name must be one of: "bsc5", "hip2", "tyc2"'
+
+        assert star_catalog in _supported_databases, 'Star catalogue name must be one of: ' \
+             + str(_supported_databases)
         max_fov = np.deg2rad(float(max_fov))
         pattern_stars_per_fov = int(pattern_stars_per_fov)
-        catalog_stars_per_fov = int(catalog_stars_per_fov)
-        star_min_magnitude = float(star_min_magnitude)
+        verification_stars_per_fov = int(verification_stars_per_fov)
+        star_max_magnitude = float(star_max_magnitude)
         star_min_separation = float(star_min_separation)
         pattern_size = 4
         pattern_bins = 25
         current_year = datetime.utcnow().year
         
-        # Get star catalog file info:
-        catalog_file_names = {
-          'bsc5': 'BSC5',
-          'hip2': 'hip_main.dat',
-          'tyc2': 'tyc_main.dat'       
-        }
-        catalog_file_name = catalog_file_names[star_catalog]
-        catalog_file_full_pathname = Path(__file__).parent / catalog_file_names[star_catalog]
-        assert os.path.exists(catalog_file_full_pathname), 'Error, file "%s" does not exist' % catalog_file_full_pathname        
-        file_size = os.path.getsize(catalog_file_full_pathname)
-        self._logger.debug("Star catalogue file size is %i Bytes" % file_size)
+        catalog_file_full_pathname = Path(__file__).parent / star_catalog
+        # Add .dat suffix for hip and tyc if not present
+        if star_catalog in ('hip_main', 'tyc_main') and not catalog_file_full_pathname.suffix:
+            catalog_file_full_pathname = catalog_file_full_pathname.with_suffix('.dat')
         
+        assert catalog_file_full_pathname.exists(), 'No star catalogue found at ' +str(     catalog_file_full_pathname)   
+         
         # Calculate number of star catalog entries:
         if star_catalog == 'bsc5':
             header_length = 28
-            entry_length = 4+8+8+2+2+4+4  # sum of bytes per field according to field data types listed in bsc5_data_type below
-        elif star_catalog == 'hip2' or star_catalog == 'tyc2':
+            num_entries = 9110
+        elif star_catalog in ('hip_main', 'tyc_main'):
             header_length = 0
-            entry_length = 451  # 450 chars + linefeed
-        num_entries = int( (file_size - header_length) / entry_length )
+            num_entries = sum(1 for _ in open(catalog_file_full_pathname))
+
+        self._logger.info('Loading catalogue ' + str(star_catalog) + ' with ' + str(num_entries) \
+             + ' star entries.') 
 
         # Preallocate star table:
         star_table = np.zeros((num_entries, 6), dtype=np.float32)        
@@ -450,29 +463,29 @@ class Tetra3():
                 reader = np.fromfile(star_catalog_file, dtype=bsc5_data_type, count=num_entries)
                 for (i, entry) in enumerate(reader):  # star_num in range(num_entries):
                     mag = entry[4]/100
-                    if mag <= star_min_magnitude:
+                    if mag <= star_max_magnitude:
                         ra  = entry[1] + entry[5] * (current_year - 1950)
                         dec = entry[2] + entry[6] * (current_year - 1950)
                         star_table[i,:] = ([ra, dec, 0, 0, 0, mag])
-        elif star_catalog in ('hip2', 'tyc2'):
+        elif star_catalog in ('hip_main', 'tyc_main'):
             incomplete_entries = 0
             with open(catalog_file_full_pathname, 'r') as star_catalog_file:
                 reader = csv.reader(star_catalog_file, delimiter='|')
                 for (i, entry) in enumerate(reader):  # star_num in range(num_entries):
-                    # skip this entry if any of the required fields is empty:
+                    # skip this entry if any of the required fields are empty:
                     if entry[5].isspace() or entry[8].isspace() or entry[9].isspace() or \
                                             entry[12].isspace() or entry[13].isspace():
                         incomplete_entries +=1
                         continue
                     mag = float(entry[5])
-                    if mag is not None and mag <= star_min_magnitude:
+                    if mag is not None and mag <= star_max_magnitude:
                         pmRA = np.float(entry[12])/1000/60/60  # convert milliarcseconds per year to degrees per year
-                        ra  = np.deg2rad( np.float(entry[8]) + pmRA * (current_year - 1991.25) )
+                        ra  = np.deg2rad(np.float(entry[8]) + pmRA * (current_year - 1991.25))
                         pmDec = np.float(entry[13])/1000/60/60  # convert milliarcseconds per year to degrees per year
-                        dec = np.deg2rad( np.float(entry[9]) + pmDec * (current_year - 1991.25) )
+                        dec = np.deg2rad(np.float(entry[9]) + pmDec * (current_year - 1991.25))
                         star_table[i,:] = ([ra, dec, 0, 0, 0, mag])
                 if incomplete_entries:
-                    self._logger.info('Skipped %i incomplete entries' % incomplete_entries)
+                    self._logger.info('Skipped %i incomplete entries.' % incomplete_entries)
 
         # Remove entries in which RA and Dec are both zero
         # (i.e. keep entries in which either RA or Dec is non-zero)
@@ -480,7 +493,8 @@ class Tetra3():
         star_table = star_table[kept, :]
         star_table = star_table[np.argsort(star_table[:, -1]), :]  # Sort by brightness
         num_entries = star_table.shape[0]
-        self._logger.info('Loaded ' + str(num_entries) + ' stars from catalogue.')                        
+        self._logger.info('Loaded ' + str(num_entries) + ' stars with magnitude below ' \
+            + str(star_max_magnitude) + '.')
 
         # Calculate star direction vectors:
         for i in range(0, num_entries):
@@ -513,17 +527,17 @@ class Tetra3():
             if star_min_separation is None \
                     or all(angs_verifying < np.cos(np.deg2rad(star_min_separation))):
                 num_stars_in_fov = sum(angs_verifying > np.cos(max_fov/2))
-                if num_stars_in_fov < catalog_stars_per_fov:
+                if num_stars_in_fov < verification_stars_per_fov:
                     # Only keep if not too many close by already
                     keep_for_verifying[star_ind] = True
         # Trim down star table and update indexing for pattern stars
         star_table = star_table[keep_for_verifying, :]
         pattern_stars = (np.cumsum(keep_for_verifying)-1)[keep_for_patterns]
 
-        self._logger.info('With maximum ' + str(pattern_stars_per_fov)
-                          + ' per FOV and no doubles: ' + str(len(pattern_stars)) + '.')
-        self._logger.info('With maximum ' + str(catalog_stars_per_fov)
-                          + ' per FOV and no doubles: ' + str(star_table.shape[0]) + '.')
+        self._logger.info('For pattern matching with at most ' + str(pattern_stars_per_fov)
+                          + ' stars per FOV and no doubles: ' + str(len(pattern_stars)) + '.')
+        self._logger.info('For verification with at most ' + str(verification_stars_per_fov)
+                          + ' stars per FOV and no doubles: ' + str(star_table.shape[0]) + '.')
 
         self._logger.debug('Building temporary hash table for finding pattern neighbours')
         temp_coarse_sky_map = {}
@@ -600,9 +614,8 @@ class Tetra3():
                     pattern_catalog[index] = pattern
                     break
         self._logger.info('Finished generating database.')
-        
-        self._logger.info('Size of uncompressed star table: %i Bytes' % sys.getsizeof(star_table))
-        self._logger.info('Size of uncompressed pattern catalog: %i Bytes' % sys.getsizeof(pattern_catalog))
+        self._logger.info('Size of uncompressed star table: %i Bytes.' %star_table.nbytes)
+        self._logger.info('Size of uncompressed pattern catalog: %i Bytes.' %pattern_catalog.nbytes)
 
         self._star_table = star_table
         self._pattern_catalog = pattern_catalog
@@ -612,8 +625,8 @@ class Tetra3():
         self._db_props['pattern_max_error'] = pattern_max_error
         self._db_props['max_fov'] = np.rad2deg(max_fov)
         self._db_props['pattern_stars_per_fov'] = pattern_stars_per_fov
-        self._db_props['catalog_stars_per_fov'] = catalog_stars_per_fov
-        self._db_props['star_min_magnitude'] = star_min_magnitude
+        self._db_props['verification_stars_per_fov'] = verification_stars_per_fov
+        self._db_props['star_max_magnitude'] = star_max_magnitude
         self._db_props['star_min_separation'] = star_min_separation
         self._logger.debug(self._db_props)
 
@@ -685,7 +698,7 @@ class Tetra3():
         # extract height (y) and width (x) of image
         height, width = image.shape[0:2]
         # Extract relevant database properties
-        num_stars = self._db_props['catalog_stars_per_fov']
+        num_stars = self._db_props['verification_stars_per_fov']
         p_size = self._db_props['pattern_size']
         p_bins = self._db_props['pattern_bins']
         p_max_err = self._db_props['pattern_max_error']
