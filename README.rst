@@ -26,5 +26,6 @@ binned 2x2) camera and a Fujifilm HF35XA-5M 35mm f/1.9 lens are included as test
 field of view).
 
 To effectively use tetra3 with your camera you may need to build a database optimised for your use
-case. See the API documentation for details on this. A database built for the test data is included
+case. The Yale Bright Star Catalog, and the Hipparcos and Tyco Catalogues are supported for
+generating databases; see the API documentation. A database built for the test data is included
 as default_database.npz and may suit your needs if you have a similar camera setup.
