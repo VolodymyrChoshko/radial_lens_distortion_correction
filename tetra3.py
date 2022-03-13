@@ -913,8 +913,8 @@ class Tetra3():
 
 
 def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsample=None,
-                             filtsize=15, bg_sub_mode='local_mean', sigma_mode='global_root_square',
-                             binary_open=True, centroid_window=None, max_area=None, min_area=3,
+                             filtsize=25, bg_sub_mode='local_mean', sigma_mode='global_root_square',
+                             binary_open=True, centroid_window=None, max_area=None, min_area=None,
                              max_sum=None, min_sum=None, max_axis_ratio=None, max_returned=None,
                              return_moments=False, return_images=False):
     """Extract spot centroids from an image and calculate statistics.
@@ -985,21 +985,21 @@ def get_centroids_from_image(image, sigma=3, image_th=None, crop=None, downsampl
         image_th (float, optional): The value to threshold the image at. If supplied `sigma` and
             `simga_mode` will have no effect.
         crop (tuple, optional): Cropping to apply, see :meth:`tetra3.crop_and_downsample_image`.
-        downsample (int, optinal): Downsampling to apply, see
+        downsample (int, optional): Downsampling to apply, see
             :meth:`tetra3.crop_and_downsample_image`.
         filtsize (int, optional): Size of filter to use in local operations. Must be odd.
-            Default 7.
-        bg_sub_mode (str, optional): Background subtraction mode. Must be one of 'local_median'
-            (the default), 'local_mean', 'global_median', 'global_mean'.
+            Default 25.
+        bg_sub_mode (str, optional): Background subtraction mode. Must be one of 'local_median',
+            'local_mean' (the default), 'global_median', 'global_mean'.
         sigma_mode (str, optinal): Mode used to calculate noise standard deviation. Must be one of
-            'local_median_abs' (the default), 'local_root_square', 'global_median_abs', or
-            'global_root_square'.
+            'local_median_abs', 'local_root_square', 'global_median_abs', or
+            'global_root_square' (the default).
         binary_open (bool, optional): If True (the default), apply binary opening with 3x3 cross
            to thresholded binary mask.
         centroid_window (int, optional): If supplied, recalculate statistics using a square window
             of the supplied size.
         max_area (int, optional): Reject spots larger than this.
-        min_area (int, optional): Reject spots smaller than this. Default 3.
+        min_area (int, optional): Reject spots smaller than this.
         max_sum (float, optional): Reject spots with a sum larger than this.
         min_sum (float, optional): Reject spots with a sum smaller than this.
         max_axis_ratio (float, optional): Reject spots with a ratio of major over minor axis larger
