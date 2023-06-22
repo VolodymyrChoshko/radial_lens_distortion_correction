@@ -1,0 +1,5 @@
+2023-05-23 04:01:54,379:tetra3.Tetra3-DEBUG: Tetra3 Constructor called with load_database=default_database
+2023-05-23 04:01:54,379:tetra3.Tetra3-DEBUG: Trying to load database
+2023-05-23 04:01:54,379:tetra3.Tetra3-DEBUG: Got load database with: default_database
+2023-05-23 04:01:54,379:tetra3.Tetra3-DEBUG: String given, append to tetra3 directory
+2023-05-23 04:01:54,379:tetra3.Tetra3-INFO: Loading database from: E:\Small\radial_lens_distortion_correction\tetra3\examples\default_database.npz

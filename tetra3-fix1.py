@@ -176,57 +176,48 @@ def _generate_patterns_from_centroids(star_centroids, pattern_size):
 #         star_vectors.append(vec)
 #     return star_vectors
 
-def compute_vectors(star_centroids,hfov,k1,k2,p1,p2,width,height):
+def compute_vectors(star_centroids,fov,k1,width,height):
     """Get unit vectors from star centroids (pinhole camera)."""
     # compute list of (i,j,k) vectors given list of (y,x) star centroids and
     # an estimate of the image's field-of-view in the x dimension
     # by applying the pinhole camera equations
-    #k1: radial distortion term. Should be small. Start off at 0.
-    #k2: radial distortion term. Should be small. Start off at 0. Should be smaller than k1.
-    #p1: tangential distortion term. Should be small. Start off at 0.
-    #p2: tangential distortion term. Should be small. Start off at 0.
-    center_x = width / 2.
-    center_y = height / 2.
-    scale_factor = np.tan(hfov / 2) / center_x  #this is the plate scale
-
+    center_x = width / 2.   #center pixelx
+    center_y = height / 2.  #center pixely
+    #scale_factor = np.tan(fov / 2) / center_x  #this is the plate scale
     star_vectors = []
+    f=width/(2*np.tan(fov/2))
     for (star_y, star_x) in star_centroids:
-        x_d=center_x-star_x
-        y_d=center_y-star_y
-        r_d=np.sqrt(x_d**2+y_d**2)
-        star_x=star_x+(x_d*(k1*r_d**2+k2*r_d**4))+(p1*(r_d**2+2*(x_d)**2))+(2*p2*x_d*y_d)
-        star_y=star_y+(y_d*(k1*r_d**2+k2*r_d**4))+(2*p1*x_d*y_d)+(p2*(r_d**2+2*(y_d)**2))
-        j_over_i = (center_x - star_x) * scale_factor
-        k_over_i = (center_y - star_y) * scale_factor
+        undistort_star_x=f*(center_x-star_x)*(1+k1*((center_x-star_x)**2+(center_y-star_y)**2))
+        undistort_star_y=f*(center_y-star_y)*(1+k1*((center_x-star_x)**2+(center_y-star_y)**2))
+        #j_over_i = (center_x - star_x) * scale_factor
+        #k_over_i = (center_y - star_y) * scale_factor
+        j_over_i = undistort_star_x
+        k_over_i = undistort_star_y
         i = 1. / np.sqrt(1 + j_over_i**2 + k_over_i**2)
         j = j_over_i * i
         k = k_over_i * i
         vec = np.array([i, j, k])
-        print(f'compute_vectors2a: {vec}')
         star_vectors.append(vec)
-
-        #estimated paremeters
-        focal_length = 1/scale_factor
-        vfov=2*np.arctan(scale_factor*center_y)
-        plate_scale = hfov/width    #radian/pixel
-        #also want to record best fits for k1,k2,p1,p2
-        #####################
     return star_vectors
 
 
-def fov_to_error(fov, params):
-    print(f'fov: {fov}')
+# def fov_to_error(fov, params):
+def fov_to_error(params, image_centroids, catalog_edges, width, height):
+    # print(f'fov: {fov}')
 
-    image_centroids=params[0]
-    catalog_edges=params[1]
-    k1=params[2]
-    k2=params[3]
-    p1=params[4]
-    p2=params[5]
-    width=params[6]
-    height=params[7]
+    # image_centroids=params[0]
+    # catalog_edges=params[1]
+    # k1=params[2]
+    # width=params[3]
+    # height=params[4]
+
+    fov = params[0]
+    k1 = params[1]
+
+    print(k1)
+
     # recalculate the pattern's star vectors given the new fov
-    pattern_star_vectors = compute_vectors(image_centroids, fov, k1, k2, p1, p2, width, height)
+    pattern_star_vectors = compute_vectors(image_centroids, fov, k1, width, height)
     # recalculate the pattern's edge lengths
     pattern_edges = np.sort([norm(np.subtract(*star_pair)) for star_pair in itertools.combinations(pattern_star_vectors,2)])
     # return a list of errors, one for each edge
@@ -805,10 +796,8 @@ class Tetra3():
 
         # extract height (y) and width (x) of image
         height, width = image.shape[0:2]
-        k1 = 0
-        k2 = 0
-        p1 = 0
-        p2 = 0
+        k1 = 0.00001;
+        k1_estimate = 0.5
         # Extract relevant database properties
         num_stars = self._db_props['verification_stars_per_fov']
         p_size = self._db_props['pattern_size']
@@ -827,7 +816,7 @@ class Tetra3():
         for image_centroids in _generate_patterns_from_centroids(
                                             star_centroids[:pattern_checking_stars], p_size):
             # compute star vectors using an estimate for the field-of-view in the x dimension
-            pattern_star_vectors = compute_vectors(image_centroids, fov_estimate, k1, k2, p1, p2,width,height)
+            pattern_star_vectors = compute_vectors(image_centroids, fov_estimate, k1,width,height)
             # calculate and sort the edges of the star pattern
             pattern_edges = np.sort([norm(np.subtract(
                 *star_pair)) for star_pair in itertools.combinations(pattern_star_vectors, 2)])
@@ -885,7 +874,7 @@ class Tetra3():
                     #     # return a list of errors, one for each edge
                     #     return catalog_edges - pattern_edges
                     print("catalog_edges : ", catalog_edges)
-                    params=[image_centroids, catalog_edges, k1, k2, p1, p2, width, height]
+                    params=[image_centroids, catalog_edges, width, height]
                     # params.append(image_centroids)
                     # params.append(catalog_edges)
                     # params.append(width)
@@ -893,14 +882,21 @@ class Tetra3():
     
 
                     # find the fov that minimizes the squared error, starting with the estimate
-                    fov = scipy.optimize.leastsq(fov_to_error, fov_estimate, params)[0][0]
+                    # fov = scipy.optimize.leastsq(fov_to_error, fov_estimate, params)[0][0]
+                    # fitted_params, success = scipy.optimize.leastsq(fov_to_error, [fov_estimate, k1_estimate], args=params)
+                    fitted_params, success = scipy.optimize.leastsq(fov_to_error, [fov_estimate, k1_estimate], args=(image_centroids, catalog_edges, width, height))
+
+                    fov = fitted_params[0]
+                    k1 = fitted_params[1]
+
+                    print(k1)
 
                     # If the FOV is incorrect we can skip this immediately
                     if fov_max_error is not None and abs(fov - fov_estimate) > fov_max_error:
                         continue
 
                     # Recalculate vectors and uniquely sort them by distance from centroid
-                    pattern_star_vectors = compute_vectors(image_centroids, fov, k1, k2, p1, p2, width, height)
+                    pattern_star_vectors = compute_vectors(image_centroids, fov, k1, width, height)
                     # find the centroid, or average position, of the star pattern
                     pattern_centroid = np.mean(pattern_star_vectors, axis=0)
                     # calculate each star's radius, or Euclidean distance from the centroid
@@ -937,7 +933,7 @@ class Tetra3():
                     rotation_matrix = find_rotation_matrix(pattern_sorted_vectors,
                                                            catalog_sorted_vectors)
                     # calculate all star vectors using the new field-of-view
-                    all_star_vectors = compute_vectors(star_centroids, fov, k1, k2, p1, p2, width, height)
+                    all_star_vectors = compute_vectors(star_centroids, fov, k1, width, height)
                     rotated_star_vectors = np.array([np.dot(rotation_matrix.T, star_vector)
                                                      for star_vector in all_star_vectors])
                     # Find all star vectors inside the (diagonal) field of view for matching
